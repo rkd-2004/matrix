@@ -1,48 +1,68 @@
-let userConfig = undefined
+import { readFileSync } from 'fs';
+
+let userConfig = {};
 try {
-  userConfig = await import('./v0-user-next.config')
+  userConfig = (await import('./v0-user-next.config.js')).default;
 } catch (e) {
-  // ignore error
+  console.log('No user config found, using defaults');
 }
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  images: {
-    unoptimized: true,
-  },
+  /* ===== Vercel Deployment Essentials ===== */
+  output: process.env.VERCEL ? 'standalone' : undefined,
+  distDir: process.env.VERCEL ? '.next' : 'build',
+  
+  /* ===== Build Optimizations ===== */
   experimental: {
     webpackBuildWorker: true,
-    parallelServerBuildTraces: true,
     parallelServerCompiles: true,
+    optimizeCss: true,
+    instrumentationHook: true,
   },
-}
 
-mergeConfig(nextConfig, userConfig)
+  /* ===== Error Handling ===== */
+  eslint: { ignoreDuringBuilds: true },
+  typescript: { ignoreBuildErrors: true },
 
-function mergeConfig(nextConfig, userConfig) {
-  if (!userConfig) {
-    return
-  }
+  /* ===== Image Handling ===== */
+  images: {
+    unoptimized: process.env.NODE_ENV === 'production',
+    domains: [
+      'localhost',
+      'vercel.app',
+      // Add other domains as needed
+    ],
+  },
 
-  for (const key in userConfig) {
-    if (
-      typeof nextConfig[key] === 'object' &&
-      !Array.isArray(nextConfig[key])
-    ) {
-      nextConfig[key] = {
-        ...nextConfig[key],
-        ...userConfig[key],
-      }
+  /* ===== Webpack Customization ===== */
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = { 
+        ...config.resolve.fallback,
+        fs: false 
+      };
+    }
+    return config;
+  },
+};
+
+// Deep merge function for configs
+function mergeConfigs(defaultConfig, customConfig) {
+  const result = { ...defaultConfig };
+  
+  for (const key in customConfig) {
+    if (typeof customConfig[key] === 'object' && !Array.isArray(customConfig[key])) {
+      result[key] = {
+        ...(result[key] || {}),
+        ...customConfig[key],
+      };
     } else {
-      nextConfig[key] = userConfig[key]
+      result[key] = customConfig[key];
     }
   }
+  
+  return result;
 }
 
-export default nextConfig
+export default mergeConfigs(nextConfig, userConfig);
